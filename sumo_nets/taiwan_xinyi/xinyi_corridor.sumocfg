@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <input>
+        <net-file value="xinyi_corridor.net.xml"/>
+        <route-files value="xinyi_corridor.rou.xml"/>
+    </input>
+    <time>
+        <begin value="0"/>
+        <step-length value="1.0"/>
+    </time>
+    <processing>
+        <!-- Lateral sublane model enabled: simulates motorcycle lane-filtering -->
+        <lateral-resolution value="0.8"/>
+        <collision.action value="none"/>
+        <time-to-teleport value="-1"/>
+    </processing>
+    <report>
+        <no-step-log value="true"/>
+    </report>
+</configuration>

@@ -1,0 +1,35 @@
+# WaveGuard Default Configuration
+environment:
+  sim_step: 1.0
+  yellow_time: 3
+  all_red_time: 2
+  min_green_time: 10
+  max_green_time: 60
+  lateral_resolution: 0.8
+  grid_size: 12        # 12x12 BEV grid
+  grid_range: 60.0     # 60 meters radius around intersection center
+  channels: 2          # 0: passenger cars, 1: motorcycles
+
+reward_weights:
+  alpha: 1.0           # Flow weight (average delay / queue length)
+  beta: 0.5            # Safety weight (TTC < 3.0s conflict penalty)
+  gamma: 0.3           # Equity weight (|motorcycle_wait - car_wait|)
+  ttc_threshold: 3.0   # seconds
+
+model:
+  node_in_dim: 32      # Feature vector dimension after BEV CNN/MLP encoder
+  hidden_dim: 64
+  gat_heads: 4
+  action_dim: 4        # 4 selectable green phases per intersection
+  learning_rate: 0.0005
+  gamma: 0.95
+  epsilon_start: 1.0
+  epsilon_min: 0.05
+  epsilon_decay: 0.985
+  batch_size: 64
+  buffer_size: 10000
+  target_update_freq: 100
+
+traffic:
+  motorcycle_ratio: 0.55  # 55% motorcycles, 45% cars (Taiwan urban standard)
+  insertion_rate: 0.35    # vehicles per second per entrance

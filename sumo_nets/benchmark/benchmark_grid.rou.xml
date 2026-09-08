@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes>
+    <!-- Vehicle types -->
+    <vType id="passenger" accel="2.6" decel="4.5" sigma="0.5" length="4.5" width="1.8" minGap="2.0" maxSpeed="15.0" latAlignment="center"/>
+    <vType id="motorcycle" accel="3.2" decel="5.0" sigma="0.5" length="2.0" width="0.8" minGap="0.8" maxSpeed="15.0" latAlignment="arbitrary"/>
+
+    <!-- Routes -->
+    <route id="r_w0_e1" edges="E_W0_J0 E_J0_J1 E_J1_E1"/>
+    <route id="r_e1_w0" edges="E_E1_J1 E_J1_J0 E_J0_W0"/>
+    <route id="r_w2_e3" edges="E_W2_J2 E_J2_J3 E_J3_E3"/>
+    <route id="r_e3_w2" edges="E_E3_J3 E_J3_J2 E_J2_W2"/>
+    
+    <route id="r_s0_n2" edges="E_S0_J0 E_J0_J2 E_J2_N2"/>
+    <route id="r_n2_s0" edges="E_N2_J2 E_J2_J0 E_J0_S0"/>
+    <route id="r_s1_n3" edges="E_S1_J1 E_J1_J3 E_J3_N3"/>
+    <route id="r_n3_s1" edges="E_N3_J3 E_J3_J1 E_J1_S1"/>
+
+    <!-- Vehicle flows: 55% motorcycles, 45% passenger cars -->
+    <flow id="f_w0_e1_car" type="passenger" route="r_w0_e1" begin="0" end="3600" probability="0.08"/>
+    <flow id="f_w0_e1_moto" type="motorcycle" route="r_w0_e1" begin="0" end="3600" probability="0.10"/>
+
+    <flow id="f_e1_w0_car" type="passenger" route="r_e1_w0" begin="0" end="3600" probability="0.08"/>
+    <flow id="f_e1_w0_moto" type="motorcycle" route="r_e1_w0" begin="0" end="3600" probability="0.10"/>
+
+    <flow id="f_w2_e3_car" type="passenger" route="r_w2_e3" begin="0" end="3600" probability="0.08"/>
+    <flow id="f_w2_e3_moto" type="motorcycle" route="r_w2_e3" begin="0" end="3600" probability="0.10"/>
+
+    <flow id="f_e3_w2_car" type="passenger" route="r_e3_w2" begin="0" end="3600" probability="0.08"/>
+    <flow id="f_e3_w2_moto" type="motorcycle" route="r_e3_w2" begin="0" end="3600" probability="0.10"/>
+
+    <flow id="f_s0_n2_car" type="passenger" route="r_s0_n2" begin="0" end="3600" probability="0.06"/>
+    <flow id="f_s0_n2_moto" type="motorcycle" route="r_s0_n2" begin="0" end="3600" probability="0.08"/>
+
+    <flow id="f_n2_s0_car" type="passenger" route="r_n2_s0" begin="0" end="3600" probability="0.06"/>
+    <flow id="f_n2_s0_moto" type="motorcycle" route="r_n2_s0" begin="0" end="3600" probability="0.08"/>
+
+    <flow id="f_s1_n3_car" type="passenger" route="r_s1_n3" begin="0" end="3600" probability="0.06"/>
+    <flow id="f_s1_n3_moto" type="motorcycle" route="r_s1_n3" begin="0" end="3600" probability="0.08"/>
+
+    <flow id="f_n3_s1_car" type="passenger" route="r_n3_s1" begin="0" end="3600" probability="0.06"/>
+    <flow id="f_n3_s1_moto" type="motorcycle" route="r_n3_s1" begin="0" end="3600" probability="0.08"/>
+</routes>

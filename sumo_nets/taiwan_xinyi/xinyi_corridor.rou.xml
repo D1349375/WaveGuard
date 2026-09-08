@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes>
+    <!-- Heterogeneous Vehicle Models for Taiwan Urban Arterial -->
+    <vType id="passenger" accel="2.6" decel="4.5" sigma="0.5" length="4.5" width="1.8" minGap="2.0" maxSpeed="16.67" latAlignment="center"/>
+    <vType id="motorcycle" accel="3.5" decel="5.5" sigma="0.5" length="2.0" width="0.8" minGap="0.8" maxSpeed="16.67" latAlignment="arbitrary"/>
+
+    <!-- Main Arterial Routes -->
+    <route id="r_main_east" edges="E_W_J0 E_J0_J1 E_J1_J2 E_J2_J3 E_J3_J4 E_J4_J5 E_J5_E"/>
+    <route id="r_main_west" edges="E_E_J5 E_J5_J4 E_J4_J3 E_J3_J2 E_J2_J1 E_J1_J0 E_J0_W"/>
+
+    <route id="r_ns_0" edges="E_N0_J0 E_J0_S0"/>
+    <route id="r_sn_0" edges="E_S0_J0 E_J0_N0"/>
+    <route id="r_turn_n_0" edges="E_W_J0  E_J0_N0"/>
+    <route id="r_turn_s_0" edges="E_W_J0  E_J0_S0"/>
+    <route id="r_ns_1" edges="E_N1_J1 E_J1_S1"/>
+    <route id="r_sn_1" edges="E_S1_J1 E_J1_N1"/>
+    <route id="r_turn_n_1" edges="E_W_J0 E_J0_J1 E_J1_N1"/>
+    <route id="r_turn_s_1" edges="E_W_J0 E_J0_J1 E_J1_S1"/>
+    <route id="r_ns_2" edges="E_N2_J2 E_J2_S2"/>
+    <route id="r_sn_2" edges="E_S2_J2 E_J2_N2"/>
+    <route id="r_turn_n_2" edges="E_W_J0 E_J0_J1 E_J1_J2 E_J2_N2"/>
+    <route id="r_turn_s_2" edges="E_W_J0 E_J0_J1 E_J1_J2 E_J2_S2"/>
+    <route id="r_ns_3" edges="E_N3_J3 E_J3_S3"/>
+    <route id="r_sn_3" edges="E_S3_J3 E_J3_N3"/>
+    <route id="r_turn_n_3" edges="E_W_J0 E_J0_J1 E_J1_J2 E_J2_J3 E_J3_N3"/>
+    <route id="r_turn_s_3" edges="E_W_J0 E_J0_J1 E_J1_J2 E_J2_J3 E_J3_S3"/>
+    <route id="r_ns_4" edges="E_N4_J4 E_J4_S4"/>
+    <route id="r_sn_4" edges="E_S4_J4 E_J4_N4"/>
+    <route id="r_turn_n_4" edges="E_W_J0 E_J0_J1 E_J1_J2 E_J2_J3 E_J3_J4 E_J4_N4"/>
+    <route id="r_turn_s_4" edges="E_W_J0 E_J0_J1 E_J1_J2 E_J2_J3 E_J3_J4 E_J4_S4"/>
+    <route id="r_ns_5" edges="E_N5_J5 E_J5_S5"/>
+    <route id="r_sn_5" edges="E_S5_J5 E_J5_N5"/>
+    <route id="r_turn_n_5" edges="E_W_J0 E_J0_J1 E_J1_J2 E_J2_J3 E_J3_J4 E_J4_J5 E_J5_N5"/>
+    <route id="r_turn_s_5" edges="E_W_J0 E_J0_J1 E_J1_J2 E_J2_J3 E_J3_J4 E_J4_J5 E_J5_S5"/>
+
+    <!-- Arterial Flows (55% Motorcycles / 45% Passenger Cars) -->
+    <flow id="f_east_car" type="passenger" route="r_main_east" begin="0" end="3600" probability="0.22"/>
+    <flow id="f_east_moto" type="motorcycle" route="r_main_east" begin="0" end="3600" probability="0.28"/>
+
+    <flow id="f_west_car" type="passenger" route="r_main_west" begin="0" end="3600" probability="0.18"/>
+    <flow id="f_west_moto" type="motorcycle" route="r_main_west" begin="0" end="3600" probability="0.22"/>
+
+    <flow id="f_ns_0_car" type="passenger" route="r_ns_0" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_ns_0_moto" type="motorcycle" route="r_ns_0" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_sn_0_car" type="passenger" route="r_sn_0" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_sn_0_moto" type="motorcycle" route="r_sn_0" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_ns_1_car" type="passenger" route="r_ns_1" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_ns_1_moto" type="motorcycle" route="r_ns_1" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_sn_1_car" type="passenger" route="r_sn_1" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_sn_1_moto" type="motorcycle" route="r_sn_1" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_ns_2_car" type="passenger" route="r_ns_2" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_ns_2_moto" type="motorcycle" route="r_ns_2" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_sn_2_car" type="passenger" route="r_sn_2" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_sn_2_moto" type="motorcycle" route="r_sn_2" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_ns_3_car" type="passenger" route="r_ns_3" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_ns_3_moto" type="motorcycle" route="r_ns_3" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_sn_3_car" type="passenger" route="r_sn_3" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_sn_3_moto" type="motorcycle" route="r_sn_3" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_ns_4_car" type="passenger" route="r_ns_4" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_ns_4_moto" type="motorcycle" route="r_ns_4" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_sn_4_car" type="passenger" route="r_sn_4" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_sn_4_moto" type="motorcycle" route="r_sn_4" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_ns_5_car" type="passenger" route="r_ns_5" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_ns_5_moto" type="motorcycle" route="r_ns_5" begin="0" end="3600" probability="0.07"/>
+    <flow id="f_sn_5_car" type="passenger" route="r_sn_5" begin="0" end="3600" probability="0.05"/>
+    <flow id="f_sn_5_moto" type="motorcycle" route="r_sn_5" begin="0" end="3600" probability="0.07"/>
+</routes>

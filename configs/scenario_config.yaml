@@ -1,0 +1,18 @@
+# WaveGuard Demo Scenario: Incident Shockwave Dissipation
+scenario:
+  name: "ghost_traffic_jam_shockwave_dissipation"
+  description: "Upstream minor collision creates a backward-propagating shockwave. Evaluates AI corridor coordination vs Fixed-Time."
+  corridor_network: "sumo_nets/taiwan_xinyi/xinyi_corridor.sumocfg"
+  benchmark_network: "sumo_nets/benchmark/benchmark_grid.sumocfg"
+  
+incident:
+  trigger_step: 250        # Step (seconds) when incident occurs after flow stabilizes
+  duration: 45            # Incident duration in seconds
+  target_edge: "E_J1_J2"  # Inbound edge to intersection J2
+  speed_limit: 0.0        # Forced halt (speed=0)
+  vehicle_type: "passenger"
+
+evaluation:
+  simulation_steps: 600   # 10 minutes total run
+  warmup_steps: 100
+  eval_interval: 10       # Metrics recording interval in seconds

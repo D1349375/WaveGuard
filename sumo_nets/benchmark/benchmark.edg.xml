@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<edges xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <!-- Horizontal internal -->
+    <edge id="E_J0_J1" from="J0" to="J1" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J1_J0" from="J1" to="J0" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J2_J3" from="J2" to="J3" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J3_J2" from="J3" to="J2" priority="2" numLanes="2" speed="13.89"/>
+
+    <!-- Vertical internal -->
+    <edge id="E_J0_J2" from="J0" to="J2" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J2_J0" from="J2" to="J0" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J1_J3" from="J1" to="J3" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J3_J1" from="J3" to="J1" priority="2" numLanes="2" speed="13.89"/>
+
+    <!-- Boundary West -->
+    <edge id="E_W0_J0" from="W0" to="J0" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J0_W0" from="J0" to="W0" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_W2_J2" from="W2" to="J2" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J2_W2" from="J2" to="W2" priority="2" numLanes="2" speed="13.89"/>
+
+    <!-- Boundary East -->
+    <edge id="E_J1_E1" from="J1" to="E1" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_E1_J1" from="E1" to="J1" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J3_E3" from="J3" to="E3" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_E3_J3" from="E3" to="J3" priority="2" numLanes="2" speed="13.89"/>
+
+    <!-- Boundary South -->
+    <edge id="E_S0_J0" from="S0" to="J0" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J0_S0" from="J0" to="S0" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_S1_J1" from="S1" to="J1" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J1_S1" from="J1" to="S1" priority="2" numLanes="2" speed="13.89"/>
+
+    <!-- Boundary North -->
+    <edge id="E_N2_J2" from="N2" to="J2" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J2_N2" from="J2" to="N2" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_N3_J3" from="N3" to="J3" priority="2" numLanes="2" speed="13.89"/>
+    <edge id="E_J3_N3" from="J3" to="N3" priority="2" numLanes="2" speed="13.89"/>
+</edges>
