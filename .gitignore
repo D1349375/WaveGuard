@@ -33,8 +33,9 @@ htmlcov/
 
 # Logs and outputs
 *.log
-results/checkpoints/
 results/*.mp4
+*ssm_out.xml
+*.out.xml
 
 # OS generated
 .DS_Store

@@ -68,14 +68,13 @@ class MaxPressureController:
                 actions[tid] = curr_action
                 continue
 
-            # Pressure heuristic: compare arterial queue vs cross street queue
-            # From BEV grid:
-            # East-West (arterial) corresponds to horizontal axis
-            # North-South (cross) corresponds to vertical axis
-            bev = obs[tid]["bev_grid"]
-            # Sum total vehicles
-            ew_pressure = np.sum(bev[:, :, 4:8])      # Central horizontal band
-            ns_pressure = np.sum(bev[:, 4:8, :])      # Central vertical band
+            # Max Pressure: argmax_p (sum_{l in in_p} queue_l - sum_{l in out_p} queue_l),
+            # grouped by movement axis. Computed from real per-lane queues via
+            # TraciWrapper.get_movement_pressures (see envs/traci_wrapper.py),
+            # not approximated from BEV grid occupancy cells.
+            movement = obs[tid]["movement_pressure"]
+            ew_pressure = movement["arterial"]
+            ns_pressure = movement["cross"]
 
             # If motorcycle stop box is saturated (>80%), prioritize arterial clearance
             stop_box_sat = obs[tid]["scalar_feats"][0]
@@ -106,24 +105,37 @@ class FailSafeCoordinator:
         self.heartbeat_timeout = heartbeat_timeout
         self.consecutive_misses = 0
         self.is_fallback_active = False
+        self._last_good_actions = None
 
     def act(self, obs, sim_step=0, force_degrade=False):
         """
-        Chooses action via MARL or degrades to Max Pressure.
-        """
-        # Simulated sensor / communication health check
-        sensor_healthy = not force_degrade and (self.consecutive_misses < self.heartbeat_timeout)
+        Chooses action via MARL, or degrades to Max Pressure once
+        `heartbeat_timeout` consecutive misses have been observed.
 
-        if sensor_healthy:
+        The primary agent is probed on every call (unless force_degrade),
+        including while already degraded, so the coordinator recovers
+        automatically as soon as inputs are healthy again -- it must not
+        permanently latch into fallback mode after the first sustained outage.
+        A short run of misses below the timeout is tolerated by re-using the
+        last known-good MARL action rather than immediately dropping to the
+        rule-based controller, to avoid flapping on a single transient blip.
+        """
+        if not force_degrade:
             try:
                 actions = self.marl_agent.act(obs, explore=False)
                 self.consecutive_misses = 0
                 self.is_fallback_active = False
+                self._last_good_actions = actions
                 return actions, "MARL_COOPERATIVE"
             except Exception:
                 self.consecutive_misses += 1
+        else:
+            self.consecutive_misses += 1
 
-        # Fail-safe triggered
+        if self.consecutive_misses < self.heartbeat_timeout and self._last_good_actions is not None:
+            self.is_fallback_active = False
+            return self._last_good_actions, "MARL_COOPERATIVE"
+
         self.is_fallback_active = True
         actions = self.fallback_ctrl.act(obs)
         return actions, "FAILSAFE_MAX_PRESSURE"

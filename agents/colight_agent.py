@@ -89,14 +89,41 @@ class WaveGuardCoLightAgent:
         self.loss_fn = nn.SmoothL1Loss()  # Huber loss for stability
         self.memory = ReplayBuffer(capacity=buffer_size)
 
+        # Minimum green time enforcement to avoid signal fluttering (Section 2.2)
+        self.min_green = 10
+        self.active_phase = {tid: 0 for tid in tls_ids}
+        self.phase_timer = {tid: 0 for tid in tls_ids}
+
         self.train_step_count = 0
+
+    def reset_timers(self):
+        """Resets phase timers for a new episode."""
+        self.active_phase = {tid: 0 for tid in self.tls_ids}
+        self.phase_timer = {tid: 0 for tid in self.tls_ids}
 
     def act(self, obs_dict, explore=True):
         """
         Takes decentralized actions for each intersection using GAT features.
+        Enforces minimum green time (10s) to prevent signal fluttering.
         """
+        actions = {}
+        for tid in self.tls_ids:
+            self.phase_timer[tid] += 1
+
+        # Check which agents are eligible to change phase
+        eligible = [tid for tid in self.tls_ids if self.phase_timer[tid] >= self.min_green]
+
+        if not eligible:
+            return {tid: self.active_phase[tid] for tid in self.tls_ids}
+
+        # Exploration check
         if explore and random.random() < self.epsilon:
-            return {tid: random.randint(0, self.action_dim - 1) for tid in self.tls_ids}
+            for tid in eligible:
+                new_act = random.randint(0, self.action_dim - 1)
+                if new_act != self.active_phase[tid]:
+                    self.active_phase[tid] = new_act
+                    self.phase_timer[tid] = 0
+            return {tid: self.active_phase[tid] for tid in self.tls_ids}
 
         # Prepare batch tensors for all nodes: (num_agents, 2, N, N)
         bev_list = []
@@ -113,69 +140,84 @@ class WaveGuardCoLightAgent:
             q_vals = self.q_net(bevs, scalars, self.adj)  # (num_agents, action_dim)
             best_actions = torch.argmax(q_vals, dim=-1).cpu().numpy()
 
-        return {tid: int(best_actions[i]) for i, tid in enumerate(self.tls_ids)}
+        for i, tid in enumerate(self.tls_ids):
+            if tid in eligible:
+                # Local directional pressure from BEV grid
+                bev = obs_dict[tid]["bev_grid"]
+                ew_p = float(np.sum(bev[:, :, 4:8]))
+                ns_p = float(np.sum(bev[:, 4:8, :]))
+                p_bias = np.array([ew_p - ns_p, ns_p - ew_p, 0.0, 0.0], dtype=np.float32)
+
+                # GAT attention Q-values fused with pressure guidance (PressLight/CoLight formulation)
+                q_score = q_vals[i].cpu().numpy() + 0.3 * p_bias
+
+                # Taiwan-specific feature: if motorcycle stop box is saturated (>80%), prioritize arterial green
+                stop_box_sat = obs_dict[tid]["scalar_feats"][0]
+                if stop_box_sat > 0.8:
+                    target_act = 0
+                else:
+                    target_act = int(np.argmax(q_score[:2]))
+
+                if target_act != self.active_phase[tid]:
+                    self.active_phase[tid] = target_act
+                    self.phase_timer[tid] = 0
+
+            actions[tid] = self.active_phase[tid]
+
+        return actions
 
     def store_transition(self, obs, actions, rewards, next_obs, done):
         """Stores structured multi-agent transition in replay buffer."""
         self.memory.push(obs, actions, rewards, next_obs, done)
 
     def train_step(self):
-        """Performs one step of Q-learning optimization."""
+        """Performs one vectorized step of Q-learning optimization."""
         if len(self.memory) < self.batch_size:
             return None
 
         batch = self.memory.sample(self.batch_size)
-        losses = []
-
         self.q_net.train()
 
-        # Batch preparation
+        # Vectorized batch construction
+        batch_bevs = []
+        batch_scalars = []
+        batch_actions = []
+        batch_rewards = []
+        batch_next_bevs = []
+        batch_next_scalars = []
+        batch_dones = []
+
         for obs_dict, action_dict, reward_dict, next_obs_dict, done in batch:
-            bevs = torch.tensor(
-                np.array([obs_dict[tid]["bev_grid"] for tid in self.tls_ids]),
-                dtype=torch.float32, device=self.device
-            )
-            scalars = torch.tensor(
-                np.array([obs_dict[tid]["scalar_feats"] for tid in self.tls_ids]),
-                dtype=torch.float32, device=self.device
-            )
-            actions = torch.tensor(
-                [action_dict[tid] for tid in self.tls_ids],
-                dtype=torch.int64, device=self.device
-            ).unsqueeze(-1)
-            rewards = torch.tensor(
-                [reward_dict[tid] for tid in self.tls_ids],
-                dtype=torch.float32, device=self.device
-            ).unsqueeze(-1)
+            batch_bevs.append([obs_dict[tid]["bev_grid"] for tid in self.tls_ids])
+            batch_scalars.append([obs_dict[tid]["scalar_feats"] for tid in self.tls_ids])
+            batch_actions.append([action_dict[tid] for tid in self.tls_ids])
+            batch_rewards.append([reward_dict[tid] for tid in self.tls_ids])
+            batch_next_bevs.append([next_obs_dict[tid]["bev_grid"] for tid in self.tls_ids])
+            batch_next_scalars.append([next_obs_dict[tid]["scalar_feats"] for tid in self.tls_ids])
+            batch_dones.append([1.0 if done else 0.0])
 
-            next_bevs = torch.tensor(
-                np.array([next_obs_dict[tid]["bev_grid"] for tid in self.tls_ids]),
-                dtype=torch.float32, device=self.device
-            )
-            next_scalars = torch.tensor(
-                np.array([next_obs_dict[tid]["scalar_feats"] for tid in self.tls_ids]),
-                dtype=torch.float32, device=self.device
-            )
+        b_bevs = torch.tensor(np.array(batch_bevs), dtype=torch.float32, device=self.device)          # (B, N, 2, G, G)
+        b_scalars = torch.tensor(np.array(batch_scalars), dtype=torch.float32, device=self.device)    # (B, N, 3)
+        b_actions = torch.tensor(np.array(batch_actions), dtype=torch.int64, device=self.device).unsqueeze(-1)  # (B, N, 1)
+        b_rewards = torch.tensor(np.array(batch_rewards), dtype=torch.float32, device=self.device).unsqueeze(-1) # (B, N, 1)
+        b_next_bevs = torch.tensor(np.array(batch_next_bevs), dtype=torch.float32, device=self.device)
+        b_next_scalars = torch.tensor(np.array(batch_next_scalars), dtype=torch.float32, device=self.device)
+        b_dones = torch.tensor(np.array(batch_dones), dtype=torch.float32, device=self.device).unsqueeze(-1) # (B, 1, 1)
 
-            # Current Q
-            q_pred = self.q_net(bevs, scalars, self.adj).gather(1, actions)
+        # Q prediction: (B, N, 1)
+        q_preds = self.q_net(b_bevs, b_scalars, self.adj).gather(-1, b_actions)
 
-            # Target Q (Double DQN or Bellman target)
-            with torch.no_grad():
-                if done:
-                    q_target = rewards
-                else:
-                    next_q = self.target_net(next_bevs, next_scalars, self.adj).max(1, keepdim=True)[0]
-                    q_target = rewards + self.gamma * next_q
+        # Target Q: (B, N, 1)
+        with torch.no_grad():
+            next_q = self.target_net(b_next_bevs, b_next_scalars, self.adj).max(-1, keepdim=True)[0]
+            q_targets = b_rewards + self.gamma * next_q * (1.0 - b_dones)
 
-            loss = self.loss_fn(q_pred, q_target)
+        loss = self.loss_fn(q_preds, q_targets)
 
-            self.optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.q_net.parameters(), max_norm=5.0)
-            self.optimizer.step()
-
-            losses.append(loss.item())
+        self.optimizer.zero_grad()
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.q_net.parameters(), max_norm=5.0)
+        self.optimizer.step()
 
         self.train_step_count += 1
 
@@ -184,10 +226,11 @@ class WaveGuardCoLightAgent:
             self.epsilon *= self.epsilon_decay
 
         # Target network update
-        if self.train_step_count % 10 == 0:
+        # Target network update
+        if self.train_step_count % 100 == 0:
             self.target_net.load_state_dict(self.q_net.state_dict())
 
-        return float(np.mean(losses))
+        return float(loss.item())
 
     def save(self, path):
         path = Path(path)

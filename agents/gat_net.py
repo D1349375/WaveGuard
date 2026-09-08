@@ -67,44 +67,47 @@ class GraphAttentionLayer(nn.Module):
 
     def forward(self, h, adj):
         """
-        h: (num_nodes, in_features)
+        h: (num_nodes, in_features) or (batch_size, num_nodes, in_features)
         adj: (num_nodes, num_nodes) adjacency matrix
         """
-        num_nodes = h.size(0)
-        # Linear projection: (num_nodes, num_heads, head_dim)
-        Wh = self.W(h).view(num_nodes, self.num_heads, self.head_dim)
+        is_batched = (h.dim() == 3)
+        if not is_batched:
+            h = h.unsqueeze(0)  # (1, num_nodes, in_features)
 
-        # Attention logits: e_ij = a_src * Wh_i + a_dst * Wh_j
-        attn_src = (Wh * self.a_src).sum(dim=-1)  # (num_nodes, num_heads)
-        attn_dst = (Wh * self.a_dst).sum(dim=-1)  # (num_nodes, num_heads)
+        batch_size, num_nodes, _ = h.shape
+        Wh = self.W(h).view(batch_size, num_nodes, self.num_heads, self.head_dim)
 
-        # Broadcast addition for all pairs (i, j): (num_nodes, num_nodes, num_heads)
-        attn = attn_src.unsqueeze(1) + attn_dst.unsqueeze(0)
+        attn_src = (Wh * self.a_src).sum(dim=-1)  # (batch_size, num_nodes, num_heads)
+        attn_dst = (Wh * self.a_dst).sum(dim=-1)  # (batch_size, num_nodes, num_heads)
+
+        # Broadcast for all pairs (i, j): (batch_size, num_nodes, num_nodes, num_heads)
+        attn = attn_src.unsqueeze(2) + attn_dst.unsqueeze(1)
         attn = self.leaky_relu(attn)
 
-        # Mask non-connected edges
-        mask = (adj == 0).unsqueeze(-1)  # (num_nodes, num_nodes, 1)
+        # Mask non-connected edges: (1, num_nodes, num_nodes, 1)
+        mask = (adj == 0).unsqueeze(0).unsqueeze(-1)
         attn = attn.masked_fill(mask, -1e9)
 
-        # Softmax over neighbors (dim=1)
-        alpha = F.softmax(attn, dim=1)
-        alpha = self.dropout(alpha)  # (num_nodes, num_nodes, num_heads)
+        # Softmax over neighbors (dim=2)
+        alpha = F.softmax(attn, dim=2)
+        alpha = self.dropout(alpha)
 
-        # Weighted sum: (num_nodes, num_heads, head_dim)
-        # alpha: (num_nodes, num_nodes, num_heads) -> permute to (num_heads, num_nodes, num_nodes)
-        # Wh: (num_nodes, num_heads, head_dim) -> permute to (num_heads, num_nodes, head_dim)
-        alpha_p = alpha.permute(2, 0, 1)
-        Wh_p = Wh.permute(1, 0, 2)
-        h_prime = torch.bmm(alpha_p, Wh_p)  # (num_heads, num_nodes, head_dim)
-        h_prime = h_prime.permute(1, 0, 2).contiguous().view(num_nodes, self.out_features)
+        # Weighted sum across neighbors: alpha (B, N, M, H) * Wh (B, M, H, D) -> (B, N, H, D)
+        # Using einsum for clean vectorized computation
+        h_prime = torch.einsum("bnmh,bmhd->bnhd", alpha, Wh)
+        h_prime = h_prime.contiguous().view(batch_size, num_nodes, self.out_features)
+        out = F.elu(h_prime)
 
-        return F.elu(h_prime)
+        if not is_batched:
+            out = out.squeeze(0)
+        return out
 
 
 class CoLightNetwork(nn.Module):
     """
     Complete CoLight MARL Network:
     BEVEncoder -> GAT Message Passing -> Action-Value (Q-Network) Head.
+    Supports both single-step and batched inference/training.
     """
     def __init__(self, grid_size=12, scalar_dim=3, hidden_dim=64, num_heads=4, action_dim=4):
         super().__init__()
@@ -119,18 +122,28 @@ class CoLightNetwork(nn.Module):
 
     def forward(self, bev_grids, scalar_feats, adj_matrix):
         """
-        bev_grids: (num_nodes, 2, N, N)
-        scalar_feats: (num_nodes, 3)
+        bev_grids: (num_nodes, 2, N, N) or (batch, num_nodes, 2, N, N)
+        scalar_feats: (num_nodes, 3) or (batch, num_nodes, 3)
         adj_matrix: (num_nodes, num_nodes)
         Returns:
-        q_values: (num_nodes, action_dim)
+        q_values: (num_nodes, action_dim) or (batch, num_nodes, action_dim)
         """
-        # 1. Local state embedding
-        node_embeddings = self.encoder(bev_grids, scalar_feats)  # (num_nodes, hidden_dim)
+        is_batched = (bev_grids.dim() == 5)
+        if not is_batched:
+            bev_grids = bev_grids.unsqueeze(0)
+            scalar_feats = scalar_feats.unsqueeze(0)
 
-        # 2. Inter-intersection cooperative message passing
-        coop_embeddings = self.gat(node_embeddings, adj_matrix)  # (num_nodes, hidden_dim)
+        batch_size, num_nodes, c, h, w = bev_grids.shape
+        # Flatten batch and nodes for encoder
+        flat_bevs = bev_grids.view(batch_size * num_nodes, c, h, w)
+        flat_scalars = scalar_feats.view(batch_size * num_nodes, -1)
 
-        # 3. Action-value prediction
-        q_values = self.q_head(coop_embeddings)  # (num_nodes, action_dim)
+        node_embeds = self.encoder(flat_bevs, flat_scalars)
+        node_embeds = node_embeds.view(batch_size, num_nodes, -1)
+
+        coop_embeds = self.gat(node_embeds, adj_matrix)  # (batch, num_nodes, hidden_dim)
+        q_values = self.q_head(coop_embeds)              # (batch, num_nodes, action_dim)
+
+        if not is_batched:
+            q_values = q_values.squeeze(0)
         return q_values

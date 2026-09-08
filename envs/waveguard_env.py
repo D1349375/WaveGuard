@@ -62,7 +62,8 @@ class WaveGuardEnv(gym.Env):
             sumocfg_path=sumocfg_path,
             gui=gui,
             step_length=self.cfg["environment"]["sim_step"],
-            lateral_resolution=self.cfg["environment"]["lateral_resolution"]
+            lateral_resolution=self.cfg["environment"]["lateral_resolution"],
+            ttc_threshold=self.cfg["reward_weights"]["ttc_threshold"]
         )
 
         self.grid_size = self.cfg["environment"]["grid_size"]
@@ -154,7 +155,8 @@ class WaveGuardEnv(gym.Env):
                 "bev_grid": bev_grid,
                 "scalar_feats": scalars,
                 "pressure": float(pressures[i]),
-                "neighbor_pressures": neighbors
+                "neighbor_pressures": neighbors,
+                "movement_pressure": self.wrapper.get_movement_pressures(tid)
             }
 
         return obs

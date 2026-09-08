@@ -23,22 +23,24 @@ import traci
 import sumolib
 
 class TraciWrapper:
-    def __init__(self, sumocfg_path, gui=False, step_length=1.0, lateral_resolution=0.8):
+    def __init__(self, sumocfg_path, gui=False, step_length=1.0, lateral_resolution=0.8, ttc_threshold=3.0):
         self.sumocfg_path = str(Path(sumocfg_path).resolve())
         self.gui = gui
         self.step_length = step_length
         self.lateral_resolution = lateral_resolution
+        self.ttc_threshold = ttc_threshold
         self.is_running = False
         self.tls_ids = []
         self.tls_lane_map = {}
         self.tls_pos_map = {}
         self.step_count = 0
-        
+
         # Performance & Safety tracking
         self.total_completed_trips = 0
         self.ttc_conflict_count = 0
         self.waiting_time_cars = []
         self.waiting_time_motos = []
+        self._prev_conflict_vehicles = set()
         
         # Transition state machine for hard yellow/all-red constraints
         # Each TLS tracks: {current_green, target_green, transition_state, remaining_yellow, remaining_allred}
@@ -60,7 +62,12 @@ class TraciWrapper:
             "--seed", str(seed),
             "--no-warnings", "true",
             "--no-step-log", "true",
-            "--quit-on-end", "true"
+            "--quit-on-end", "true",
+            # Section 2.4 / shared-infra doc Section 4: TTC/PET must come from SUMO's
+            # own Surrogate Safety Measures device, not from hand-rolled leader/speed math.
+            "--device.ssm.probability", "1.0",
+            "--device.ssm.measures", "TTC",
+            "--device.ssm.thresholds", str(self.ttc_threshold),
         ]
 
         traci.start(cmd)
@@ -70,6 +77,7 @@ class TraciWrapper:
         self.ttc_conflict_count = 0
         self.waiting_time_cars = []
         self.waiting_time_motos = []
+        self._prev_conflict_vehicles = set()
 
         # Cache TLS and their controlled lanes & junction coordinates
         self.tls_ids = list(traci.trafficlight.getIDList())
@@ -120,34 +128,46 @@ class TraciWrapper:
         self._track_safety_and_equity()
 
     def _track_safety_and_equity(self):
-        """Calculates TTC safety conflicts and car vs motorcycle waiting time."""
+        """
+        Calculates TTC safety conflicts (via SUMO's SSM device) and car vs
+        motorcycle waiting time.
+        """
         active_vehs = traci.vehicle.getIDList()
-        
+        current_conflicts = set()
+
         for vid in active_vehs:
             # Equity: record waiting time by vehicle type
             vtype = traci.vehicle.getTypeID(vid)
             wait_time = traci.vehicle.getWaitingTime(vid)
-            
+
             if "moto" in vtype.lower():
                 self.waiting_time_motos.append(wait_time)
             else:
                 self.waiting_time_cars.append(wait_time)
 
-            # Safety: TTC (Time to Collision) calculation with leading vehicle
-            leader_info = traci.vehicle.getLeader(vid, dist=50.0)
-            if leader_info is not None:
-                lead_id, dist = leader_info
-                v_speed = traci.vehicle.getSpeed(vid)
-                try:
-                    lead_speed = traci.vehicle.getSpeed(lead_id)
-                except traci.TraCIException:
-                    lead_speed = 0.0
+            # Safety: read the live minTTC tracked by the SSM device attached to
+            # this vehicle (Section 2.4 / shared-infra doc Section 4 explicitly
+            # require using SUMO's own SSM output instead of recomputing TTC by
+            # hand from getLeader()/getSpeed()).
+            try:
+                raw = traci.vehicle.getParameter(vid, "device.ssm.minTTC")
+            except traci.TraCIException:
+                raw = ""
 
-                rel_speed = v_speed - lead_speed
-                if rel_speed > 0.5 and dist > 0.1:
-                    ttc = dist / rel_speed
-                    if ttc < 3.0:  # Section 2.4 specification: TTC < 3.0s
-                        self.ttc_conflict_count += 1
+            if raw not in ("", None):
+                try:
+                    ttc = float(raw)
+                except ValueError:
+                    ttc = None
+                if ttc is not None and 0.0 <= ttc < self.ttc_threshold:
+                    current_conflicts.add(vid)
+
+        # Count each conflict once per rising edge (i.e. when a vehicle newly
+        # enters an unsafe-TTC encounter), rather than once per simulation step
+        # for the whole duration the encounter persists.
+        new_conflicts = current_conflicts - self._prev_conflict_vehicles
+        self.ttc_conflict_count += len(new_conflicts)
+        self._prev_conflict_vehicles = current_conflicts
 
     def get_grid_bev(self, tls_id, grid_size=12, grid_range=60.0):
         """
@@ -218,33 +238,76 @@ class TraciWrapper:
         lanes = self.tls_lane_map.get(tls_id, [])
         return sum(traci.lane.getLastStepHaltingNumber(l) for l in lanes)
 
+    def _get_downstream_lanes(self, lane_id):
+        """Resolves the real downstream lane(s) for an inbound lane via SUMO's own
+        connection topology (traci.lane.getLinks), instead of guessing from the
+        edge-ID naming convention (which only happens to work for this project's
+        auto-generated grid networks and would silently return nothing on any
+        other network)."""
+        try:
+            links = traci.lane.getLinks(lane_id)
+        except traci.TraCIException:
+            return []
+        return [link[0] for link in links if link and link[0]]
+
     def get_intersection_pressure(self, tls_id):
         """
         Computes the traffic pressure for Max Pressure control and GAT state aggregation.
         Pressure = Sum(Incoming lane queues) - Sum(Outgoing lane queues).
+        Outgoing lanes are resolved via SUMO's connection topology (getLinks), not
+        via string-parsing of edge IDs.
         """
         lanes = self.tls_lane_map.get(tls_id, [])
         in_queue = sum(traci.lane.getLastStepHaltingNumber(l) for l in lanes)
-        
-        # Outgoing lanes estimation
-        out_lanes = []
+
+        out_lanes = set()
         for lane in lanes:
-            edge_id = traci.lane.getEdgeID(lane)
-            # Find reverse or downstream edge
-            if "E_" in edge_id:
-                parts = edge_id.split("_")
-                if len(parts) == 3 and parts[2] == tls_id:
-                    out_edge = f"E_{parts[2]}_{parts[1]}"
-                    out_lanes.append(out_edge)
+            out_lanes.update(self._get_downstream_lanes(lane))
 
         out_queue = 0
-        for edge in out_lanes:
+        for lane in out_lanes:
             try:
-                out_queue += traci.edge.getLastStepHaltingNumber(edge)
+                out_queue += traci.lane.getLastStepHaltingNumber(lane)
             except traci.TraCIException:
                 pass
 
         return max(float(in_queue - out_queue * 0.5), 0.0)
+
+    def get_movement_pressures(self, tls_id):
+        """
+        Implements the Max Pressure formula (Section 2.5 / rule_controllers.py):
+        a* = argmax_p (sum_{l in in_p} queue_l - sum_{l in out_p} queue_l)
+        grouped by movement axis (arterial E-W vs cross-street N-S), which is the
+        two real phase groups exposed by this project's TLS programs.
+
+        Movements are classified from each lane's own shape geometry (dominant
+        travel heading), so this works for any grid-aligned network rather than
+        relying on node/edge naming conventions.
+        Returns: {"arterial": pressure, "cross": pressure}
+        """
+        lanes = self.tls_lane_map.get(tls_id, [])
+        pressures = {"arterial": 0.0, "cross": 0.0}
+
+        for lane in lanes:
+            try:
+                shape = traci.lane.getShape(lane)
+            except traci.TraCIException:
+                continue
+            if len(shape) < 2:
+                continue
+            (x0, y0), (x1, y1) = shape[0], shape[-1]
+            axis = "arterial" if abs(x1 - x0) >= abs(y1 - y0) else "cross"
+
+            in_q = traci.lane.getLastStepHaltingNumber(lane)
+            out_q = sum(
+                traci.lane.getLastStepHaltingNumber(l)
+                for l in self._get_downstream_lanes(lane)
+            )
+            pressures[axis] += float(in_q - out_q * 0.5)
+
+        pressures["arterial"] = max(pressures["arterial"], 0.0)
+        pressures["cross"] = max(pressures["cross"], 0.0)
+        return pressures
 
     def execute_phase(self, tls_id, target_phase_idx, yellow_time=3, all_red_time=2):
         """

@@ -1,0 +1,8 @@
+Metric,Fixed-Time (Baseline),Max-Pressure,WaveGuard (AI),Improvement vs Baseline
+Average Waiting Time (s),1.38,0.47,0.7,49.3%
+Motorcycle Avg Wait (s),1.4,0.52,0.73,47.9%
+Car Avg Wait (s),1.35,0.4,0.66,51.1%
+Equity Wait Gap (s),0.05,0.11,0.07,-40.0%
+Throughput (Vehicles),469.0,497.0,494.0,+5.3%
+TTC Safety Conflicts (<3s),2842.0,2418.0,2664.0,6.3%
+Mean Halting Queue,33.04,14.05,15.88,51.9%

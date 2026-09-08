@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_335400a87b896fe780a68515cba289b1 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
+        
+</head>
+<body>
+    
+    
+            <div class="folium-map" id="map_335400a87b896fe780a68515cba289b1" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_335400a87b896fe780a68515cba289b1 = L.map(
+                "map_335400a87b896fe780a68515cba289b1",
+                {
+                    center: [25.033, 121.555],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  "zoom": 15,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_c9bad23201f206db35683c0fa33ba4ce = L.tileLayer(
+                "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 20,
+  "maxNativeZoom": 20,
+  "noWrap": false,
+  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors \u0026copy; \u003ca href=\"https://carto.com/attributions\"\u003eCARTO\u003c/a\u003e",
+  "subdomains": "abcd",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_c9bad23201f206db35683c0fa33ba4ce.addTo(map_335400a87b896fe780a68515cba289b1);
+        
+    
+            var poly_line_341e825d27d50928ffe620cc4107a685 = L.polyline(
+                [[25.0332, 121.5435], [25.0331, 121.548], [25.033, 121.5525], [25.0329, 121.557], [25.0328, 121.5615], [25.0327, 121.566]],
+                {"bubblingMouseEvents": true, "color": "#1E88E5", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "#1E88E5", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.8, "smoothFactor": 1.0, "stroke": true, "weight": 6}
+            ).addTo(map_335400a87b896fe780a68515cba289b1);
+        
+    
+            poly_line_341e825d27d50928ffe620cc4107a685.bindTooltip(
+                `<div>
+                     Taipei Xinyi Corridor (WaveGuard Active)
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var circle_marker_747645a13ae573e1d15745fa5d9fd1c5 = L.circleMarker(
+                [25.0332, 121.5435],
+                {"bubblingMouseEvents": true, "color": "green", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "green", "fillOpacity": 0.9, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 9, "stroke": true, "weight": 3}
+            ).addTo(map_335400a87b896fe780a68515cba289b1);
+        
+    
+        var popup_d4a099f28390fd238f586ebc7e1e2710 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_439934fa55314523da44f2021869bc4c = $(`<div id="html_439934fa55314523da44f2021869bc4c" style="width: 100.0%; height: 100.0%;"><b>J0: Xinyi / Fuxing S. Rd</b><br>Upstream entry<br><i>WaveGuard 5G MEC Managed</i></div>`)[0];
+                popup_d4a099f28390fd238f586ebc7e1e2710.setContent(html_439934fa55314523da44f2021869bc4c);
+            
+        
+
+        circle_marker_747645a13ae573e1d15745fa5d9fd1c5.bindPopup(popup_d4a099f28390fd238f586ebc7e1e2710)
+        ;
+
+        
+    
+    
+            var circle_marker_97fbf659f3b77fd2ccb34e91a7d6063c = L.circleMarker(
+                [25.0331, 121.548],
+                {"bubblingMouseEvents": true, "color": "green", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "green", "fillOpacity": 0.9, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 9, "stroke": true, "weight": 3}
+            ).addTo(map_335400a87b896fe780a68515cba289b1);
+        
+    
+        var popup_60423c43a3e961baa49c0dd09a8916ce = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_0ec1e11181d9779394263a2c616c5c42 = $(`<div id="html_0ec1e11181d9779394263a2c616c5c42" style="width: 100.0%; height: 100.0%;"><b>J1: Xinyi / Daan Rd</b><br>Upstream buffer zone<br><i>WaveGuard 5G MEC Managed</i></div>`)[0];
+                popup_60423c43a3e961baa49c0dd09a8916ce.setContent(html_0ec1e11181d9779394263a2c616c5c42);
+            
+        
+
+        circle_marker_97fbf659f3b77fd2ccb34e91a7d6063c.bindPopup(popup_60423c43a3e961baa49c0dd09a8916ce)
+        ;
+
+        
+    
+    
+            var circle_marker_a8132163edaa20d8e5689a4ff21efe2f = L.circleMarker(
+                [25.033, 121.5525],
+                {"bubblingMouseEvents": true, "color": "red", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "red", "fillOpacity": 0.9, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 9, "stroke": true, "weight": 3}
+            ).addTo(map_335400a87b896fe780a68515cba289b1);
+        
+    
+        var popup_4931c8b16492020669a744bc78bd796a = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_b3b96ad97b24664ebfdb9925f9fb3ca1 = $(`<div id="html_b3b96ad97b24664ebfdb9925f9fb3ca1" style="width: 100.0%; height: 100.0%;"><b>J2: Xinyi / Dunhua S. Rd</b><br>⚠️ Incident site (Shockwave source)<br><i>WaveGuard 5G MEC Managed</i></div>`)[0];
+                popup_4931c8b16492020669a744bc78bd796a.setContent(html_b3b96ad97b24664ebfdb9925f9fb3ca1);
+            
+        
+
+        circle_marker_a8132163edaa20d8e5689a4ff21efe2f.bindPopup(popup_4931c8b16492020669a744bc78bd796a)
+        ;
+
+        
+    
+    
+            var circle_marker_18cb67b51502577ec46ebee2469363a4 = L.circleMarker(
+                [25.0329, 121.557],
+                {"bubblingMouseEvents": true, "color": "green", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "green", "fillOpacity": 0.9, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 9, "stroke": true, "weight": 3}
+            ).addTo(map_335400a87b896fe780a68515cba289b1);
+        
+    
+        var popup_ebf6569f08a368e91dd165d95960c6d2 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_d3278555354243ee9606211b6725f78f = $(`<div id="html_d3278555354243ee9606211b6725f78f" style="width: 100.0%; height: 100.0%;"><b>J3: Xinyi / Anhe Rd</b><br>Downstream clearing junction<br><i>WaveGuard 5G MEC Managed</i></div>`)[0];
+                popup_ebf6569f08a368e91dd165d95960c6d2.setContent(html_d3278555354243ee9606211b6725f78f);
+            
+        
+
+        circle_marker_18cb67b51502577ec46ebee2469363a4.bindPopup(popup_ebf6569f08a368e91dd165d95960c6d2)
+        ;
+
+        
+    
+    
+            var circle_marker_cc9bb99448fd11d4f37f5983630883b4 = L.circleMarker(
+                [25.0328, 121.5615],
+                {"bubblingMouseEvents": true, "color": "green", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "green", "fillOpacity": 0.9, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 9, "stroke": true, "weight": 3}
+            ).addTo(map_335400a87b896fe780a68515cba289b1);
+        
+    
+        var popup_8e678c810db9b46d5630d8278189aea8 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_449078b242dfb172692c8d28666760ac = $(`<div id="html_449078b242dfb172692c8d28666760ac" style="width: 100.0%; height: 100.0%;"><b>J4: Xinyi / Tonghua St</b><br>Downstream collector<br><i>WaveGuard 5G MEC Managed</i></div>`)[0];
+                popup_8e678c810db9b46d5630d8278189aea8.setContent(html_449078b242dfb172692c8d28666760ac);
+            
+        
+
+        circle_marker_cc9bb99448fd11d4f37f5983630883b4.bindPopup(popup_8e678c810db9b46d5630d8278189aea8)
+        ;
+
+        
+    
+    
+            var circle_marker_a86247fe6a0d60d36dac44e173f14591 = L.circleMarker(
+                [25.0327, 121.566],
+                {"bubblingMouseEvents": true, "color": "green", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "green", "fillOpacity": 0.9, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 9, "stroke": true, "weight": 3}
+            ).addTo(map_335400a87b896fe780a68515cba289b1);
+        
+    
+        var popup_44968d05385346045d403f359db16377 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_d97a57d2c175625ffdc378e2ceee140e = $(`<div id="html_d97a57d2c175625ffdc378e2ceee140e" style="width: 100.0%; height: 100.0%;"><b>J5: Xinyi / Keelung Rd</b><br>Corridor exit (Taipei 101)<br><i>WaveGuard 5G MEC Managed</i></div>`)[0];
+                popup_44968d05385346045d403f359db16377.setContent(html_d97a57d2c175625ffdc378e2ceee140e);
+            
+        
+
+        circle_marker_a86247fe6a0d60d36dac44e173f14591.bindPopup(popup_44968d05385346045d403f359db16377)
+        ;
+
+        
+    
+</script>
+</html>
