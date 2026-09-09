@@ -33,6 +33,7 @@ class TraciWrapper:
         self.tls_ids = []
         self.tls_lane_map = {}
         self.tls_pos_map = {}
+        self.tls_program_id = {}
         self.step_count = 0
 
         # Performance & Safety tracking
@@ -54,6 +55,17 @@ class TraciWrapper:
             pass
 
         sumo_binary = "sumo-gui" if self.gui else "sumo"
+        # Without an explicit --device.ssm.file, SUMO names SSM output per
+        # equipped vehicle (e.g. "ssm_<vehID>.xml") and keeps each file open for
+        # that vehicle's lifetime in the simulation -- with --device.ssm.probability
+        # 1.0 and any non-trivial traffic volume this exhausts the OS file handle
+        # limit ("Too many open files") well before an episode finishes. Routing
+        # every vehicle's SSM output to one shared file avoids that. The file's
+        # contents aren't consumed (we read live per-vehicle minTTC over TraCI
+        # instead, see _track_safety_and_equity), so a throwaway per-run path is fine.
+        ssm_out_dir = Path(self.sumocfg_path).resolve().parent / "_ssm_out"
+        ssm_out_dir.mkdir(parents=True, exist_ok=True)
+        ssm_file = ssm_out_dir / f"ssm_{os.getpid()}.xml"
         cmd = [
             sumo_binary,
             "-c", self.sumocfg_path,
@@ -68,6 +80,7 @@ class TraciWrapper:
             "--device.ssm.probability", "1.0",
             "--device.ssm.measures", "TTC",
             "--device.ssm.thresholds", str(self.ttc_threshold),
+            "--device.ssm.file", str(ssm_file),
         ]
 
         traci.start(cmd)
@@ -84,6 +97,12 @@ class TraciWrapper:
         for tid in self.tls_ids:
             lanes = list(dict.fromkeys(traci.trafficlight.getControlledLanes(tid)))
             self.tls_lane_map[tid] = lanes
+            # Remember the TLS's real program ID so we can restore it after
+            # forcing a raw all-red state via setRedYellowGreenState(), which
+            # otherwise switches the light onto a synthetic single-phase
+            # "online" program and makes setPhase() with the original phase
+            # indices fail.
+            self.tls_program_id[tid] = traci.trafficlight.getProgram(tid)
             
             # Approximate junction center from junction shape or inbound lanes
             try:
@@ -313,10 +332,22 @@ class TraciWrapper:
         """
         Enforces Section 2.2 hard safety constraints:
         Agent commands a green phase. If different from current,
-        the wrapper automatically inserts Yellow (3s) + All-Red (2s).
+        the wrapper automatically inserts Yellow (yellow_time) + All-Red (all_red_time).
+
+        This must actively hold the yellow/all-red state on every simulation
+        step of the transition. The auto-generated tlLogic programs are plain
+        SUMO "static" programs that auto-advance on their own declared phase
+        durations; calling setPhase() only once at the start of a transition
+        (the original implementation) lets SUMO's own program silently take
+        back over and auto-advance to the next green before our configured
+        yellow_time/all_red_time have actually elapsed -- meaning the "hard"
+        safety buffer could silently shrink to whatever duration happens to be
+        baked into the .net.xml. There is also no dedicated all-red phase
+        index in the auto-guessed program at all (only two greens and two
+        yellows), so the all-red window is enforced by setting the raw
+        red-yellow-green state string directly rather than a phase index.
         """
         trans = self.tls_transition[tls_id]
-        curr_phase = traci.trafficlight.getPhase(tls_id)
 
         # Map agent green action (0, 1, 2, 3) to SUMO TLS phases
         # For our 4-phase network:
@@ -328,14 +359,24 @@ class TraciWrapper:
 
         if trans["in_transition"]:
             if trans["yellow_timer"] > 0:
+                # Re-assert yellow every step so SUMO's own program cannot
+                # auto-advance past our modeled transition timing.
+                traci.trafficlight.setPhase(tls_id, (trans["active_phase"] + 1) % 4)
                 trans["yellow_timer"] -= 1
                 if trans["yellow_timer"] == 0:
-                    # Transition to all-red
                     trans["red_timer"] = all_red_time
             elif trans["red_timer"] > 0:
+                # Force a genuine all-red clearance state via the raw signal
+                # string, since no all-red phase index exists in this program.
+                state_len = len(traci.trafficlight.getRedYellowGreenState(tls_id))
+                traci.trafficlight.setRedYellowGreenState(tls_id, "r" * state_len)
                 trans["red_timer"] -= 1
                 if trans["red_timer"] == 0:
-                    # Complete transition to target green
+                    # Complete transition to target green. setRedYellowGreenState
+                    # moved the TLS onto a synthetic "online" program, so the
+                    # static program (with the original phase indices) must be
+                    # restored before setPhase() will accept trans["target_phase"].
+                    traci.trafficlight.setProgram(tls_id, self.tls_program_id[tls_id])
                     trans["in_transition"] = False
                     trans["active_phase"] = trans["target_phase"]
                     traci.trafficlight.setPhase(tls_id, trans["target_phase"])
@@ -374,13 +415,25 @@ class TraciWrapper:
             "current_halting_queue": total_halting
         }
 
-    def inject_incident(self, edge_id, speed=0.0, duration=45):
+    def inject_incident(self, edge_id, speed=0.0, duration=45, vehicle_type=None):
         """
         Injects an incident to simulate collision shockwave.
-        Forces the leading vehicle on target edge to halt.
+        Forces a vehicle on the target edge to halt.
+
+        vehicle_type: substring to match against traci.vehicle.getTypeID() (e.g.
+        "passenger"). The demo scenario is meant to simulate a stalled *car*
+        blocking a lane -- a stalled motorcycle (narrow, and sublane filtering
+        lets other vehicles route around it) produces a much weaker, less
+        representative disruption. Without this filter, the previous
+        implementation just grabbed getLastStepVehicleIDs(edge_id)[0], whichever
+        vehicle happened to be first, and in practice that was a motorcycle in
+        this network's traffic mix -- silently ignoring the
+        scenario_config.yaml `vehicle_type: "passenger"` setting entirely.
         """
         try:
             vehs = traci.edge.getLastStepVehicleIDs(edge_id)
+            if vehicle_type:
+                vehs = [v for v in vehs if vehicle_type.lower() in traci.vehicle.getTypeID(v).lower()]
             if vehs:
                 target_veh = vehs[0]
                 traci.vehicle.setSpeed(target_veh, speed)

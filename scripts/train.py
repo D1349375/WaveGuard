@@ -10,6 +10,7 @@ Trains on Taiwan Xinyi Corridor (or Benchmark network), logging:
 import os
 import sys
 import argparse
+import random
 import yaml
 import numpy as np
 import pandas as pd
@@ -31,6 +32,11 @@ def parse_args():
     parser.add_argument("--eval-interval", type=int, default=5, help="Evaluate every N episodes")
     parser.add_argument("--net", type=str, default="taiwan_xinyi", choices=["taiwan_xinyi", "benchmark"], help="Network to train on")
     parser.add_argument("--output-dir", type=str, default="results", help="Directory for logs and checkpoints")
+    parser.add_argument("--seed-base", type=int, default=42,
+                         help="Base seed for per-episode env resets (episode i uses seed-base+i). Vary this "
+                              "across independent training runs to get a variance estimate across training "
+                              "seeds -- see docs/rl_training_pitfalls_checklist.md item 2 for why a single "
+                              "training seed's result shouldn't be treated as a stable conclusion.")
     return parser.parse_args()
 
 def train():
@@ -58,7 +64,7 @@ def train():
     env.max_steps = args.steps_per_episode
 
     # Initialize agent
-    obs, info = env.reset(seed=42)
+    obs, info = env.reset(seed=args.seed_base)
     tls_ids = env.tls_ids
     agent = WaveGuardCoLightAgent(
         tls_ids=tls_ids,
@@ -71,16 +77,31 @@ def train():
         gamma=cfg["model"]["gamma"],
         epsilon_start=cfg["model"]["epsilon_start"],
         epsilon_min=cfg["model"]["epsilon_min"],
-        epsilon_decay=cfg["model"]["epsilon_decay"],
         batch_size=cfg["model"]["batch_size"],
         buffer_size=cfg["model"]["buffer_size"]
     )
+
+    # Warm-up: prime the environment's reward normalizers (RunningMeanStd for
+    # R_flow/R_safety/R_equity) with a random-action rollout before real
+    # training starts. See docs/rl_training_pitfalls_checklist.md item 5: with
+    # no warm-up, the normalizers' running mean/std start from an uninformed
+    # prior and swing wildly during exactly the phase of training where the
+    # agent is most sensitive to reward scale, making the effective reward
+    # signal non-stationary on top of the usual RL non-stationarity.
+    warmup_steps = cfg.get("reward_normalization", {}).get("warmup_steps", 300)
+    print(f"Warm-up: priming reward normalizers with {warmup_steps} random-action steps...")
+    warmup_obs, _ = env.reset(seed=args.seed_base)
+    for _ in range(warmup_steps):
+        random_actions = {tid: random.randint(0, cfg["model"]["action_dim"] - 1) for tid in tls_ids}
+        warmup_obs, _, terminated, truncated, _ = env.step(random_actions)
+        if terminated or truncated:
+            warmup_obs, _ = env.reset(seed=args.seed_base)
 
     training_records = []
     best_eval_wait = float("inf")
 
     for ep in range(1, args.episodes + 1):
-        obs, info = env.reset(seed=42 + ep)
+        obs, info = env.reset(seed=args.seed_base + ep)
         ep_rewards = []
         ep_losses = []
 
@@ -109,6 +130,7 @@ def train():
 
         record = {
             "episode": ep,
+            "seed_base": args.seed_base,
             "mean_reward": round(avg_ep_reward, 4),
             "mean_loss": round(avg_ep_loss, 4),
             "epsilon": round(agent.epsilon, 4),
@@ -129,6 +151,10 @@ def train():
                 best_eval_wait = final_metrics["overall_avg_wait_sec"]
                 best_ckpt = ckpt_dir / "best_colight_model.pt"
                 agent.save(best_ckpt)
+
+        # Decay epsilon once per completed episode for the *next* episode
+        # (see WaveGuardCoLightAgent.decay_epsilon_for_episode / checklist item 1).
+        agent.decay_epsilon_for_episode(ep, args.episodes)
 
     env.close()
 

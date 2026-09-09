@@ -36,6 +36,7 @@ htmlcov/
 results/*.mp4
 *ssm_out.xml
 *.out.xml
+sumo_nets/**/_ssm_out/
 
 # OS generated
 .DS_Store

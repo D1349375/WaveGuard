@@ -3,9 +3,23 @@ build_networks.py
 Generates SUMO networks and route files for WaveGuard:
 1. Benchmark Network: 4-intersection 2x2 grid.
 2. Taiwan Xinyi Corridor: 6-intersection arterial corridor with Taiwan mixed traffic characteristics:
-   - Motorcycle Stop Box & Sublane modeling (lateral resolution 0.8m)
-   - Two-stage Left Turn (Hook-turn) and LPI (Leading Pedestrian Interval)
-   - 55% motorcycle traffic composition
+   - Motorcycle Stop Box & Sublane modeling (lateral resolution 0.8m, actually enabled
+     via --lateral-resolution in the .sumocfg)
+   - 55% motorcycle traffic composition (actually implemented via vType/flow probabilities)
+
+LIMITATION (honestly disclosed per 實做規劃書_WaveGuard.md Section 5's explicit
+permission to skip this if time is short): the traffic light programs below are
+netconvert's auto-guessed default (--tls.guess), a plain 2-phase arterial/cross-street
++ yellow+all-red cycle. There is NO dedicated two-stage left-turn (hook-turn) waiting
+lane, motorcycle stop-box lane, or pedestrian-exclusive/LPI phase actually defined in
+the .net.xml -- a previous version of this file *claimed* those were included in a
+comment while never writing any such .tll.xml, which would have been a hard-to-catch
+gap between documentation and behavior. The Grid BEV state (envs/traci_wrapper.py
+get_grid_bev) still computes stop-box-saturation and hook-turn-count *heuristics*
+from raw vehicle positions/speeds near the junction, which is a reasonable proxy
+given mixed motorcycle/car traffic even without dedicated lane geometry, but it is
+not backed by an actual stop-box lane the way the proposal document could be read to
+imply. Building the real lane geometry is tracked as future work, not done here.
 """
 
 import os
@@ -236,16 +250,11 @@ def build_xinyi_corridor_network():
     edges_xml.append('</edges>')
     edg_file.write_text("\n".join(edges_xml), encoding="utf-8")
 
-    # 3. Traffic light logic (.tll.xml) for Taiwan Signal Phasing
-    # Phasing structure per intersection:
-    # Phase 0: Arterial E-W Green (Cars + Motorcycles)
-    # Phase 1: Arterial Yellow (3s) + All-Red (2s)
-    # Phase 2: Arterial Motorcycle Hook-Turn Clearing / LPI (5s)
-    # Phase 3: Cross Street N-S Green (Cars + Motorcycles)
-    # Phase 4: Cross Street Yellow (3s) + All-Red (2s)
-    tll_file = out_dir / "xinyi.tll.xml"
-    
-    # We will let netconvert generate initial default TLS, and then we inspect and augment or customize.
+    # 3. Traffic light logic: netconvert auto-guesses a standard 4-phase program
+    # per intersection (Arterial Green -> Yellow+All-Red -> Cross-street Green ->
+    # Yellow+All-Red). See the module docstring LIMITATION note: this does NOT
+    # include a dedicated hook-turn/stop-box/LPI phase -- that would require
+    # hand-authoring a .tll.xml with real dedicated lanes, which is not done here.
     net_file = out_dir / "xinyi_corridor.net.xml"
     cmd = [
         "netconvert",

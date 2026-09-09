@@ -42,7 +42,6 @@ class WaveGuardCoLightAgent:
         gamma=0.95,
         epsilon_start=1.0,
         epsilon_min=0.05,
-        epsilon_decay=0.985,
         batch_size=64,
         buffer_size=10000,
         device="cpu"
@@ -52,9 +51,9 @@ class WaveGuardCoLightAgent:
         self.id_to_idx = {tid: i for i, tid in enumerate(tls_ids)}
         self.action_dim = action_dim
         self.gamma = gamma
+        self.epsilon_start = epsilon_start
         self.epsilon = epsilon_start
         self.epsilon_min = epsilon_min
-        self.epsilon_decay = epsilon_decay
         self.batch_size = batch_size
         self.device = torch.device(device)
 
@@ -100,6 +99,29 @@ class WaveGuardCoLightAgent:
         """Resets phase timers for a new episode."""
         self.active_phase = {tid: 0 for tid in self.tls_ids}
         self.phase_timer = {tid: 0 for tid in self.tls_ids}
+
+    def decay_epsilon_for_episode(self, completed_episodes, total_episodes):
+        """
+        Sets epsilon for the upcoming episode, decaying smoothly from
+        epsilon_start to epsilon_min over the first ~80% of total_episodes
+        and holding at epsilon_min for the rest.
+
+        See docs/rl_training_pitfalls_checklist.md item 1: the previous
+        implementation decayed epsilon once per *training step* (inside
+        train_step()) rather than once per episode. Combined with this
+        environment's ~300 steps/episode and a 64-transition replay warm-up,
+        that collapsed epsilon to its floor within the first episode --
+        over 99% of a 25-episode run then trained with almost no exploration
+        beyond whatever policy the agent stumbled into in the first ~100
+        steps. Deriving the per-episode value directly from
+        (completed_episodes, total_episodes) instead of a fixed multiplicative
+        constant also means the schedule automatically rescales if the
+        episode count changes, instead of needing the decay constant
+        re-tuned by hand every time (a likely source of the original bug).
+        """
+        anchor_episodes = max(1, int(0.8 * total_episodes))
+        progress = min(completed_episodes / anchor_episodes, 1.0)
+        self.epsilon = self.epsilon_start * (self.epsilon_min / self.epsilon_start) ** progress
 
     def act(self, obs_dict, explore=True):
         """
@@ -221,11 +243,6 @@ class WaveGuardCoLightAgent:
 
         self.train_step_count += 1
 
-        # Epsilon decay
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
-
-        # Target network update
         # Target network update
         if self.train_step_count % 100 == 0:
             self.target_net.load_state_dict(self.q_net.state_dict())

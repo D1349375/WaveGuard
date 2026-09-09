@@ -11,6 +11,7 @@ Section 3 Implementation:
 
 import os
 import sys
+import argparse
 import yaml
 import numpy as np
 import pandas as pd
@@ -44,6 +45,7 @@ def run_incident_simulation(mode_name, sumocfg_path, config, incident_cfg, agent
     duration = incident_cfg["duration"]
     incident_end = trigger_step + duration
     target_edge = incident_cfg["target_edge"]
+    vehicle_type = incident_cfg.get("vehicle_type")
 
     time_series = []
     halted_vehicle = None
@@ -51,7 +53,9 @@ def run_incident_simulation(mode_name, sumocfg_path, config, incident_cfg, agent
     for s in range(incident_cfg["simulation_steps"]):
         # Incident injection handling
         if s == trigger_step:
-            halted_vehicle = env.wrapper.inject_incident(target_edge, speed=0.0, duration=duration)
+            halted_vehicle = env.wrapper.inject_incident(
+                target_edge, speed=0.0, duration=duration, vehicle_type=vehicle_type
+            )
             print(f"[{mode_name}] Incident triggered at T={s}s on edge {target_edge} (Vehicle: {halted_vehicle})")
         
         # Maintain speed=0 during incident duration
@@ -102,22 +106,47 @@ def run_incident_simulation(mode_name, sumocfg_path, config, incident_cfg, agent
     env.close()
     return pd.DataFrame(time_series)
 
-def calculate_dissipation(df, trigger_step, incident_duration):
+def calculate_dissipation(df, trigger_step, incident_duration, sustain_steps=10, min_margin=2.0):
     """
     Calculates shockwave dissipation duration:
     Baseline queue is mean queue in steps [trigger_step - 50, trigger_step].
-    Dissipation is when incident queue returns to within 20% of baseline.
+    Dissipation is when incident queue returns to within max(25% of baseline,
+    `min_margin` vehicles) of baseline AND *stays* there for `sustain_steps`
+    consecutive samples.
+
+    The queue at a busy corridor junction is naturally noisy/oscillatory (it
+    keeps cycling with the signal phase and with unrelated arrivals), so a
+    single sample dipping below the threshold right at incident_end is not
+    reliable evidence the shockwave actually cleared -- it can just be a
+    trough in an ongoing oscillation that spikes right back up afterward. The
+    original single-sample check produced exactly that failure mode (a
+    reported "0 second" dissipation immediately contradicted by the queue
+    climbing back into double digits a few steps later in the same run).
+    Requiring a sustained run below threshold filters that out.
+
+    `min_margin` matters for the same reason: a pure 25% relative margin
+    degenerates when the baseline itself is small (queue counts are integers,
+    so e.g. a baseline of ~3 vehicles gives a ~0.75-vehicle-wide band -- tighter
+    than ordinary signal-cycle noise, so a well-controlled corridor with a low,
+    stable baseline can spuriously look "slow to recover" simply because normal
+    cycle-to-cycle fluctuation keeps tripping the threshold, not because
+    anything is actually still congested. A minimum absolute vehicle-count
+    margin keeps the comparison meaningful across runs with very different
+    baseline congestion levels.
     """
     incident_end = trigger_step + incident_duration
     baseline_queue = df.loc[(df["step"] >= trigger_step - 50) & (df["step"] < trigger_step), "j2_incident_queue"].mean()
     if np.isnan(baseline_queue) or baseline_queue == 0:
         baseline_queue = 3.0
 
-    post_incident = df[df["step"] >= incident_end]
+    post_incident = df[df["step"] >= incident_end].reset_index(drop=True)
+    threshold = baseline_queue + max(0.25 * baseline_queue, min_margin)
+    below = (post_incident["j2_incident_queue"] <= threshold).to_numpy()
+
     recovery_step = None
-    for _, row in post_incident.iterrows():
-        if row["j2_incident_queue"] <= baseline_queue * 1.25:
-            recovery_step = row["step"]
+    for i in range(len(below) - sustain_steps + 1):
+        if below[i:i + sustain_steps].all():
+            recovery_step = post_incident.loc[i, "step"]
             break
 
     if recovery_step is not None:
@@ -126,6 +155,37 @@ def calculate_dissipation(df, trigger_step, incident_duration):
         dissipation_time = (df["step"].max() - incident_end)  # Did not fully dissipate within simulation window
 
     return dissipation_time
+
+
+def calculate_excess_congestion(df, trigger_step, incident_duration, window=150):
+    """
+    Robust alternative to calculate_dissipation(): total "excess" queuing caused
+    by the incident, integrated over a fixed post-incident window, plus the
+    peak queue reached.
+
+    calculate_dissipation() reduces the whole post-incident recovery curve to a
+    single "time until back under threshold" number, which turned out to be
+    fragile in practice: on real corridor traffic the queue keeps oscillating
+    with the signal cycle, so which exact instant crosses back under an
+    arbitrary threshold is highly sensitive to noise -- checking an actual demo
+    run found it could report "instant recovery" while a second, genuine
+    congestion wave was still clearly visible a few samples later. Integrating
+    the excess queue (area above baseline) over a fixed window sidesteps that:
+    it doesn't depend on picking a single crossing instant, and a brief noisy
+    dip or spike barely moves the total.
+
+    Returns (excess_vehicle_seconds, peak_queue).
+    """
+    incident_end = trigger_step + incident_duration
+    baseline_queue = df.loc[(df["step"] >= trigger_step - 50) & (df["step"] < trigger_step), "j2_incident_queue"].mean()
+    if np.isnan(baseline_queue):
+        baseline_queue = 0.0
+
+    post = df[(df["step"] >= incident_end) & (df["step"] < incident_end + window)]
+    excess = (post["j2_incident_queue"] - baseline_queue).clip(lower=0).sum()
+    peak = post["j2_incident_queue"].max() if not post.empty else 0
+
+    return float(excess), float(peak)
 
 def generate_folium_map(out_html):
     """Generates interactive Folium map representing Taipei Xinyi Road Corridor."""
@@ -161,7 +221,17 @@ def generate_folium_map(out_html):
     m.save(str(out_html))
     print(f"Interactive Folium map saved to {out_html}")
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run WaveGuard Ghost Traffic Jam scenario demo")
+    parser.add_argument("--output-dir", type=str, default="results", help="Directory for scenario outputs")
+    parser.add_argument("--checkpoint", type=str, default=None,
+                         help="Path to a trained checkpoint (default: <output-dir>/checkpoints/best_colight_model.pt). "
+                              "Use this to run the demo against a specific training-seed's model, e.g. "
+                              "results/seed_42/checkpoints/best_colight_model.pt, without touching the canonical checkpoint.")
+    return parser.parse_args()
+
 def main():
+    args = parse_args()
     scenario_cfg_path = BASE_DIR / "configs" / "scenario_config.yaml"
     with open(scenario_cfg_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -170,11 +240,12 @@ def main():
         "simulation_steps": cfg["evaluation"]["simulation_steps"],
         "trigger_step": cfg["incident"]["trigger_step"],
         "duration": cfg["incident"]["duration"],
-        "target_edge": cfg["incident"]["target_edge"]
+        "target_edge": cfg["incident"]["target_edge"],
+        "vehicle_type": cfg["incident"].get("vehicle_type")
     }
     sumocfg = BASE_DIR / "sumo_nets" / "taiwan_xinyi" / "xinyi_corridor.sumocfg"
 
-    out_dir = BASE_DIR / "results"
+    out_dir = BASE_DIR / args.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Run Fixed-Time
@@ -192,7 +263,7 @@ def main():
         grid_size=12,
         action_dim=4
     )
-    ckpt = out_dir / "checkpoints" / "best_colight_model.pt"
+    ckpt = Path(args.checkpoint) if args.checkpoint else (out_dir / "checkpoints" / "best_colight_model.pt")
     if ckpt.exists():
         agent.load(ckpt)
     else:
@@ -206,16 +277,26 @@ def main():
     df_all.to_csv(csv_file, index=False)
     print(f"\nTime series data saved to {csv_file}")
 
-    # Calculate dissipation times
+    # Primary, robust metric: total excess queuing (area above each mode's own
+    # baseline) integrated over a fixed post-incident window, plus peak queue.
+    excess_ft, peak_ft = calculate_excess_congestion(df_ft, incident_cfg["trigger_step"], incident_cfg["duration"])
+    excess_wg, peak_wg = calculate_excess_congestion(df_wg, incident_cfg["trigger_step"], incident_cfg["duration"])
+    excess_reduction = ((excess_ft - excess_wg) / excess_ft) * 100.0 if excess_ft > 0 else 0.0
+
+    # Secondary, informational only: threshold-crossing "recovery time". Kept
+    # for reference but NOT used as the headline claim -- see
+    # calculate_dissipation()'s docstring for why this specific number is
+    # sensitive to short-term signal-cycle noise and can be misleading on its own.
     diss_ft = calculate_dissipation(df_ft, incident_cfg["trigger_step"], incident_cfg["duration"])
     diss_wg = calculate_dissipation(df_wg, incident_cfg["trigger_step"], incident_cfg["duration"])
 
     print("\n==================================================")
-    print(f"SHOCKWAVE DISSIPATION RESULTS:")
-    print(f"  Fixed-Time Dissipation Time: ~{diss_ft:.0f} seconds ({diss_ft / 60.0:.1f} mins)")
-    print(f"  WaveGuard AI Dissipation Time: ~{diss_wg:.0f} seconds ({diss_wg / 60.0:.1f} mins)")
-    diss_reduction = ((diss_ft - diss_wg) / diss_ft) * 100.0 if diss_ft > 0 else 0
-    print(f"  Dissipation Improvement: ↓ {diss_reduction:.1f}% faster recovery!")
+    print("SHOCKWAVE IMPACT RESULTS (primary metric: excess queuing at incident junction J2):")
+    print(f"  Fixed-Time:    peak queue {peak_ft:.0f} vehicles, {excess_ft:.0f} excess vehicle-seconds over 150s post-incident")
+    print(f"  WaveGuard AI:  peak queue {peak_wg:.0f} vehicles, {excess_wg:.0f} excess vehicle-seconds over 150s post-incident")
+    print(f"  Excess Congestion Reduction: down {excess_reduction:.1f}%")
+    print(f"  (Reference only, sensitive to noise -- see script docstring: threshold-crossing recovery time was "
+          f"~{diss_ft:.0f}s for Fixed-Time vs ~{diss_wg:.0f}s for WaveGuard AI)")
     print("==================================================")
 
     # Plot comparison graphs
@@ -278,6 +359,30 @@ def main():
     # Generate Folium map
     map_html = out_dir / "xinyi_corridor_heatmap.html"
     generate_folium_map(map_html)
+
+    # Persist the headline numbers (not just console output) for citing later.
+    summary_md = out_dir / "scenario_summary.md"
+    with open(summary_md, "w", encoding="utf-8") as f:
+        f.write("# WaveGuard Ghost Traffic Jam Scenario: Shockwave Impact Report\n\n")
+        f.write(
+            f"Incident: stalled `{incident_cfg.get('vehicle_type') or 'any'}` vehicle on "
+            f"`{incident_cfg['target_edge']}`, T={incident_cfg['trigger_step']}s to "
+            f"{incident_cfg['trigger_step'] + incident_cfg['duration']}s.\n\n"
+        )
+        f.write("## Primary metric: excess queuing at the incident junction (J2)\n\n")
+        f.write("Total queue-vehicles above each mode's own pre-incident baseline, "
+                "integrated over the 150s after the incident ends. Chosen over a "
+                "single-instant \"recovery time\" because that number turned out to be "
+                "sensitive to normal signal-cycle noise (see calculate_dissipation() docstring "
+                "in this script for the specific false positive it produced).\n\n")
+        f.write("| Metric | Fixed-Time | WaveGuard AI | Change |\n")
+        f.write("|---|---|---|---|\n")
+        f.write(f"| Peak queue (vehicles) | {peak_ft:.0f} | {peak_wg:.0f} | -{(peak_ft - peak_wg):.0f} |\n")
+        f.write(f"| Excess congestion (vehicle-seconds, 150s window) | {excess_ft:.0f} | {excess_wg:.0f} | -{excess_reduction:.1f}% |\n\n")
+        f.write("## Reference only (noise-sensitive, not the headline claim)\n\n")
+        f.write(f"Threshold-crossing recovery time: ~{diss_ft:.0f}s (Fixed-Time) vs ~{diss_wg:.0f}s (WaveGuard AI).\n")
+
+    print(f"Scenario summary saved to {summary_md}")
 
 if __name__ == "__main__":
     main()

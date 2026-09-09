@@ -24,11 +24,14 @@ model:
   learning_rate: 0.0005
   gamma: 0.95
   epsilon_start: 1.0
-  epsilon_min: 0.05
-  epsilon_decay: 0.985
+  epsilon_min: 0.05       # epsilon now decays once per episode (see WaveGuardCoLightAgent.decay_epsilon_for_episode),
+                          # reaching epsilon_min by ~80% of total episodes -- not a fixed per-step multiplicative rate
   batch_size: 64
   buffer_size: 10000
   target_update_freq: 100
+
+reward_normalization:
+  warmup_steps: 300    # random-action rollout steps used to prime RunningMeanStd before training starts (checklist item 5)
 
 traffic:
   motorcycle_ratio: 0.55  # 55% motorcycles, 45% cars (Taiwan urban standard)
