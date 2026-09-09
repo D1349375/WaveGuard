@@ -91,6 +91,54 @@ def test_colight_network_forward():
     assert q_vals.shape == (num_nodes, 4)
     assert not torch.isnan(q_vals).any()
 
+def test_epsilon_decays_per_episode_not_within_a_single_episode():
+    """
+    Reproduces the exact bug found reviewing a real training run:
+    epsilon_decay was previously applied once per *training step* inside
+    train_step(), which -- given ~300 steps/episode and a 64-sample replay
+    warm-up -- collapsed epsilon to its floor within the first episode. Over
+    99% of a 25-episode run then trained with almost no exploration. Here we
+    confirm: (1) train_step() no longer touches epsilon at all, so running
+    many training steps within one episode leaves it unchanged, and (2)
+    decay_epsilon_for_episode produces a smooth per-episode schedule that
+    only reaches epsilon_min near the end of training, not on episode 1.
+    """
+    tls_ids = ["J0", "J1"]
+    agent = WaveGuardCoLightAgent(
+        tls_ids=tls_ids, grid_size=12, epsilon_start=1.0, epsilon_min=0.05, batch_size=4, buffer_size=100
+    )
+
+    obs = {
+        tid: {
+            "bev_grid": np.zeros((2, 12, 12), dtype=np.float32),
+            "scalar_feats": np.array([0.0, 0.0, 0.0], dtype=np.float32),
+        }
+        for tid in tls_ids
+    }
+    rewards = {tid: 0.0 for tid in tls_ids}
+
+    # Fill the replay buffer and run several train_step() calls within a
+    # single "episode" -- epsilon must not move at all from this.
+    for _ in range(20):
+        agent.store_transition(obs, {tid: 0 for tid in tls_ids}, rewards, obs, False)
+    for _ in range(10):
+        agent.train_step()
+    assert agent.epsilon == 1.0, "train_step() must not decay epsilon (that's now per-episode only)"
+
+    total_episodes = 25
+    # Early in training, epsilon should still be close to epsilon_start.
+    agent.decay_epsilon_for_episode(completed_episodes=1, total_episodes=total_episodes)
+    assert agent.epsilon > 0.8
+
+    # By ~80% of the way through training, epsilon should have reached the floor.
+    agent.decay_epsilon_for_episode(completed_episodes=20, total_episodes=total_episodes)
+    assert agent.epsilon == pytest.approx(0.05, abs=1e-6)
+
+    # And it must never go below epsilon_min even past that point.
+    agent.decay_epsilon_for_episode(completed_episodes=25, total_episodes=total_episodes)
+    assert agent.epsilon == pytest.approx(0.05, abs=1e-6)
+
+
 def test_colight_agent_act_and_store():
     tls_ids = ["J0", "J1", "J2"]
     agent = WaveGuardCoLightAgent(tls_ids=tls_ids, grid_size=12, action_dim=4)
