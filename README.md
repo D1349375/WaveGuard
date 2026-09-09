@@ -16,13 +16,14 @@ WaveGuard is an intelligent traffic signal coordination system designed for Taiw
    - Captures non-lane motorcycle filtering (*Lane Filtering*) enabled by SUMO's sublane model (`--lateral-resolution 0.8`).
    - Scalar features track motorcycle stop-box saturation, hook-turn waiting count, and pedestrian countdown.
 
-2. **Taiwan-Specific Multi-Phase Action Structure**:
-   - Explicitly models Two-stage Left Turn (*Hook-turn*) clearance, Motorcycle Stop Box surge green, and Leading Pedestrian Intervals (*LPI*).
-   - Enforces statutory hard safety constraints: Yellow (3s) and All-Red (2s) clearance intervals are managed by a state machine and cannot be bypassed by RL agents.
+2. **Taiwan-Aware Signal Control**:
+   - Grid BEV scalar features track motorcycle stop-box saturation and hook-turn waiting counts as heuristics computed from vehicle position/speed near the junction.
+   - Enforces statutory hard safety constraints: Yellow and All-Red clearance intervals are actively held every simulation step by a state machine (re-asserting the signal state so SUMO's own program cannot silently auto-advance past them) and cannot be bypassed by RL agents.
+   - **Current limitation**: the auto-generated traffic light programs are a plain 2-phase (arterial/cross-street) + yellow/all-red cycle; there is no dedicated two-stage left-turn (hook-turn) waiting lane, motorcycle stop-box lane, or pedestrian-exclusive/LPI phase defined in the network geometry yet. Tracked as future work rather than claimed as done.
 
 3. **Multi-Agent Graph Attention Coordination (CoLight)**:
    - Centralized Training with Decentralized Execution (**CTDE**).
-   - GAT layers aggregate traffic pressure vectors from neighboring intersections with dynamic attention weights.
+   - GAT layers aggregate learned per-intersection state embeddings (from the BEV/scalar encoder) from neighboring intersections with dynamic attention weights, verified to actually change a node's output when its neighbor's input changes (not merely produce the right output shape).
 
 4. **Multi-Objective Safety & Equity Reward**:
    $$R = \alpha R_{flow} + \beta R_{safety} + \gamma R_{equity}$$
@@ -31,7 +32,8 @@ WaveGuard is an intelligent traffic signal coordination system designed for Taiw
    - $R_{equity}$: Minimizes waiting time disparity between motorcycles and passenger cars.
 
 5. **Fail-Safe Fallback Mechanism**:
-   - Communication watchdog monitors edge sensor feeds; upon sensor timeout or network degradation, control degrades smoothly to a decentralized **Max-Pressure** rule engine.
+   - Communication watchdog (`FailSafeCoordinator`) monitors the primary MARL agent's health; upon sustained failure it degrades to a decentralized **Max-Pressure** rule engine (computed from real per-lane queue differentials, not a BEV-grid approximation) and recovers automatically once healthy again.
+   - Exercised end-to-end (not just unit-tested in isolation) by `scripts/evaluate.py`, which injects a simulated sensor/communication outage mid-run as a fourth "WaveGuard-AI+FailSafe" comparison arm.
 
 ---
 
@@ -117,6 +119,7 @@ Generates comparison report `results/evaluation_summary.md` comparing:
 - Fixed-Time Control (Baseline)
 - Max-Pressure Control
 - WaveGuard MARL (AI)
+- WaveGuard MARL + FailSafe watchdog (with a simulated sensor/comms outage injected mid-run)
 
 ---
 

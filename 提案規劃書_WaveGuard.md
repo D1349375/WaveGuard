@@ -99,6 +99,9 @@ WaveGuard 的架構：路網所有路口 → 多代理人協作 → 集中感知
 **特色五｜安全降階機制（Fail-Safe Fallback）**  
 當邊緣 AI 因感測器故障或通訊中斷失效時，系統自動降階至最大壓力控制（Max Pressure Control）規則引擎，確保號誌全天候可用。
 
+**特色六｜LLM 診斷 Agent：事實先行、推理其上、結論可查核的可解釋事件分析**  
+路網協調與降階判斷的核心邏輯全程維持確定性規則/學習模型推理，**不引入 LLM 到安全關鍵控制路徑**——這是系統可靠度承諾的前提，不能為了趕搭 Agentic AI 熱度而犧牲。但事故消散、降階觸發等事件發生後，交控中心操作員需要判斷「這是可預期的日常波動還是需要介入的異常」，這件事適合交給推理型 AI 協助。設計採用「確定性 FactStore 先行、LLM 只在事實範圍內推理、結論再與 FactStore 做一致性檢查」的模式（詳見 3.3e 節），與同期提案 ResiLight 的 LLM 診斷 Agent 共用同一套設計原則，確保兩案在「LLM 可以放哪裡、不能放哪裡」這件事上口徑一致。
+
 ---
 
 # 三、設計理念
@@ -180,6 +183,8 @@ WaveGuard 採用多代理人強化學習領域最成熟的部署範式——**CT
 │  職責②  MARL 集中訓練 ── 全路網歷史數據持續訓練 → 定期更新模型 │
 │  職責③  幽靈塞車預測 ── CVP 電信大數據預測 30 分鐘後車流量      │
 │  職責④  廊道協調策略 ── 偵測衝擊波波形 → 下發協調指令給各路口  │
+│  職責⑤  LLM 診斷 Agent（唯讀）── 降階/事故事件的可解釋分析      │
+│         給操作員，不具備寫回控制邏輯的權限，見特色六            │
 │  時間尺度：秒到分鐘級決策（5G 延遲容忍度：< 500ms）            │
 ├──────────────────────────────────────────────────────────────── │
 │         ↕  中華電信 5G URLLC 切片（<10ms 延遲，99.999% 可靠）   │
@@ -271,13 +276,17 @@ CoLight 等圖注意力網路（GAT）在做出號誌決策前，需要收到鄰
 │       ├── 全路網衝擊波預測模型                                   │
 │       └── 號誌協調策略下發                                      │
 │       ↓                                                         │
-│  【可視化層】交控中心儀表板                                      │
+│  【可視化層】交控中心儀表板（非安全控制迴路）                    │
 │       ├── 路網壓力熱力圖（即時）                                 │
 │       ├── 衝擊波預測動畫                                         │
-│       └── KPI 監控：平均延誤、吞吐量、TTC 安全指數              │
+│       ├── KPI 監控：平均延誤、吞吐量、TTC 安全指數              │
+│       └── LLM 診斷 Agent：FactStore → LLM 推理 → Grounding      │
+│           Check，唯讀分析降階/事故事件，僅供操作員參考           │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+**架構上刻意的設計**：LLM 診斷 Agent 只讀取雲端記錄的事件資料（降階觸發、事故消散過程），單向輸出摘要與建議給人類操作員，**不具備對邊緣層控制邏輯的寫入權限**。這個單向資料流是有意識的安全邊界設計，確保 Agent 產生的推論內容再怎麼有誤差，都不會反過來影響號誌控制本身的確定性行為。
 
 ### 核心演算法設計：三項台灣在地適配創新
 
@@ -322,6 +331,24 @@ R_safety = -(TTC < 3s 衝突次數)    # 最小化機車/行人碰撞風險
 R_equity = -(機車平均停等時間偏差)  # 確保機車路權公平性
 ```
 
+### 3.3e LLM 診斷 Agent 技術設計：為什麼不是「把 LLM 放進控制迴路」
+
+#### 先查證：LLM 直接控制號誌，這條路線的現有研究怎麼說
+
+提案書 3.1 節文獻回顧裡提到的 LLMLight（Lai et al., KDD 2025）是這個方向目前最具代表性的研究——用 LLM 當號誌決策代理人。細看它的設計反而印證了「不能把通用 LLM 直接放進即時控制迴路」：
+
+- LLMLight 團隊**沒有直接用 GPT-4 這類通用大模型逐秒決策**，而是自行蒸餾了一個 **LightGPT（3B 輕量專用模型）**，這個選擇本身就是在向延遲與成本妥協——連原創團隊都判斷全尺寸 LLM 撐不住即時控制的需求
+- 有研究量化了這個問題的規模：GPT-4o 每次決策事件的成本約 $5.31、GPT-4o-mini 約 $1.30，且「延遲與可擴展性是 LLM 在交通管理領域實際部署的主要障礙」。WaveGuard 的場景是**每個路口每秒都要做一次決策**，路網規模一旦擴大到縣市級（數千路口），不管是延遲（LLM API 動輒數百毫秒到數秒，遠超過本方案 <50ms 的邊緣決策時限）還是成本，都完全不成比例
+- 2025-2026 這個領域的研究方向也已經從「LLM 取代 RL」轉向「LLM 負責慢速的高層策略、RL/GAT 負責快速的底層執行」的分層架構（例如 LLM 產生長期目標與 meta-action、由底層 RL agent 執行連續控制的階層式設計），與 WaveGuard 「LLM 留在唯讀分析層、GAT+MARL 留在即時控制迴路」的定位一致
+
+**結論**：WaveGuard 採用 LLMLight 點出的「LLM 可以為 TSC 帶來可解釋性」這個洞察，但不採用其「LLM 直接輸出控制決策」的角色——後者在本方案的路網規模與延遲要求下，現有文獻證據並不支持，也會讓已經驗證有效的 GAT 路網協調機制失去存在意義。
+
+#### 設計參考：與 ResiLight 共用的「事實先行」模式
+
+這不是團隊憑空設計的架構，而是呼應了 AIOps／電信領域已有的先例（詳見 ResiLight 提案 3.3d 節的完整查證與引用）：先由確定性規則從事件記錄抽取結構化事實（FactStore），LLM 只在這組事實範圍內推理，推理完的結論再與 FactStore 做一致性檢查（Grounding Check），任何與事實矛盾的推論會被明確標示、而非照單全收地呈現給操作員；無 LLM 可用時退回同一個 FactStore 驅動的規則式報告，確保有無 LLM 可用時判斷依據的事實基礎一致。WaveGuard 的應用場景是**降階事件（FailSafeCoordinator 觸發/恢復）與幽靈塞車事故消散過程**的事後分析，而非 ResiLight 的 5G 斷線診斷，但技術模式完全共用。
+
+**實作現況（誠實揭露）**：本節是設計規劃與可行性論證，**目前 WaveGuard 程式碼庫尚未實作這個模組**（ResiLight 已有對應的 `llm_agent/` 模組可直接參考複用其 FactStore/Grounding Check 架構）。如果入圍決賽，這是一項風險低、跟現有 `FailSafeCoordinator` 資料結構直接銜接、可以快速做出原型的加分項目，不是本次程式碼檢查與訓練架構修正的核心範圍。
+
 ### 核心技術棧
 
 | 層次 | 技術選型 | 說明 |
@@ -334,6 +361,7 @@ R_equity = -(機車平均停等時間偏差)  # 確保機車路權公平性
 | 通訊協定 | 台灣交控 3.0 / TCROS | 合規銜接既有號誌機 |
 | 可視化 | SUMO GUI + Folium + Deck.gl | Demo 動畫 + 路網熱力圖 |
 | 雲端平台 | 中華電信 HiCloud + MEC | 協調層部署 |
+| LLM 診斷 Agent | FactStore（規則）+ 可替換 LLM API + Grounding Check | 儀表板層，唯讀事件資料，不接入控制迴路 |
 
 ---
 
@@ -591,7 +619,13 @@ SaaS 路徑（彈性）：
 
 8. Wu, et al. (2023). *TransformerLight: A Novel Sequence Modeling Based Traffic Signaling Mechanism via Gated Transformer*. **KDD 2023**. DOI: 10.1145/3580305.3599530
 
-9. Lai, et al. (2025). *LLMLight: Large Language Models as Traffic Signal Control Agents*. **KDD 2025**.
+9. Lai, S., Xu, Z., Zhang, W., Liu, H., & Xiong, H. (2025). *LLMLight: Large Language Models as Traffic Signal Control Agents*. **KDD 2025**. arXiv:2312.16044.（LLM 診斷 Agent 設計理念參考，本方案僅用於儀表板唯讀分析，未採用其控制決策角色，見 3.3e 節）
+
+9a. (2026). *Large Language Models (LLMs) for Telecom Root Cause Analysis (RCA): A Structured Reasoning Framework for Evidence-Grounded Diagnosis*. **arXiv:2609.02805**.（電信領域「事實組織化→強制決策路徑推理→證據基礎解釋」框架，LLM 診斷 Agent 的 FactStore 設計參考，與 ResiLight 共用）
+
+9b. (2025). *Reasoning Language Models for Root Cause Analysis in 5G Wireless Networks*. **arXiv:2507.21974**.（5G 無線網路推理型 LLM 根因分析，強調結構化推理與可解釋性優先於單次生成）
+
+9c. froggychips. (2026). *sre-ai-copilot: AI-driven incident response copilot for Kubernetes*. **GitHub**: https://github.com/froggychips/sre-ai-copilot（唯讀/建議優先的 analyzer→hypothesis→critic 分工模式，FactStore + Grounding Check 設計參考）
 
 10. Anonymous. (2025). *Traffic-R1: A Foundation Model for Traffic Signal Control*. **arXiv 2025**.
 
